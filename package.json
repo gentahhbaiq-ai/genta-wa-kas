@@ -1,0 +1,16 @@
+{
+  "name": "genta-wa-kas-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp Kas Bot dengan pairing code",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "pino": "^9.6.0"
+  }
+}
