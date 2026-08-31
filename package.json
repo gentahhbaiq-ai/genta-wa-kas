@@ -1,7 +1,7 @@
 {
   "name": "genta-wa-kas-bot",
   "version": "1.0.0",
-  "description": "WhatsApp Kas Bot dengan pairing code",
+  "description": "WhatsApp Kas Bot dengan QR Code",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.18",
-    "pino": "^9.6.0"
+    "pino": "^9.6.0",
+    "dotenv": "^16.4.7",
+    "qrcode-terminal": "^0.12.0"
   }
 }
