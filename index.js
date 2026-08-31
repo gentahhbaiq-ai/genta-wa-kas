@@ -8,8 +8,10 @@ const {
 
 const pino = require("pino");
 const fs = require("fs");
+const qrcode = require("qrcode-terminal");
 
 const DATA_FILE = "./data.json";
+const AUTH_FOLDER = "./auth";
 
 // =========================
 // DATA
@@ -25,7 +27,9 @@ function loadData() {
       };
     }
 
-    return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    return JSON.parse(
+      fs.readFileSync(DATA_FILE, "utf8")
+    );
   } catch (e) {
     console.log("Gagal membaca data.json:", e);
 
@@ -184,7 +188,7 @@ async function startBot() {
   console.log("");
 
   const { state, saveCreds } =
-    await useMultiFileAuthState("./auth");
+    await useMultiFileAuthState(AUTH_FOLDER);
 
   const sock = makeWASocket({
     auth: state,
@@ -201,67 +205,6 @@ async function startBot() {
   sock.ev.on("creds.update", saveCreds);
 
   // =========================
-  // PAIRING CODE
-  // =========================
-
-  if (!sock.authState.creds.registered) {
-    const phoneNumber = process.env.WA_NUMBER;
-
-    if (!phoneNumber) {
-      console.log("");
-      console.log("=================================");
-      console.log(" WA_NUMBER BELUM DIISI");
-      console.log("=================================");
-      console.log("");
-      console.log("Railway Variables:");
-      console.log("");
-      console.log("WA_NUMBER=628xxxxxxxxxx");
-      console.log("");
-
-      return;
-    }
-
-    const cleanNumber =
-      phoneNumber.replace(/\D/g, "");
-
-    try {
-      console.log(
-        "Menunggu koneksi WhatsApp untuk pairing..."
-      );
-
-      await new Promise(resolve =>
-        setTimeout(resolve, 5000)
-      );
-
-      const code =
-        await sock.requestPairingCode(cleanNumber);
-
-      console.log("");
-      console.log("=================================");
-      console.log("      WHATSAPP PAIRING CODE");
-      console.log("=================================");
-      console.log("");
-      console.log(`Nomor : ${cleanNumber}`);
-      console.log(`CODE  : ${code}`);
-      console.log("");
-      console.log("Di HP:");
-      console.log("WhatsApp");
-      console.log("→ Perangkat tertaut");
-      console.log("→ Tautkan perangkat");
-      console.log("→ Tautkan dengan nomor telepon");
-      console.log("");
-      console.log("=================================");
-      console.log("");
-
-    } catch (err) {
-      console.log("");
-      console.log("GAGAL MENDAPATKAN PAIRING CODE");
-      console.error(err);
-      console.log("");
-    }
-  }
-
-  // =========================
   // CONNECTION
   // =========================
 
@@ -270,14 +213,49 @@ async function startBot() {
     async update => {
       const {
         connection,
-        lastDisconnect
+        lastDisconnect,
+        qr
       } = update;
+
+      // =========================
+      // QR CODE
+      // =========================
+
+      if (qr) {
+        console.log("");
+        console.log("=================================");
+        console.log("       SCAN QR WHATSAPP");
+        console.log("=================================");
+        console.log("");
+
+        qrcode.generate(qr, {
+          small: true
+        });
+
+        console.log("");
+        console.log("Di HP:");
+        console.log("WhatsApp");
+        console.log("→ Perangkat tertaut");
+        console.log("→ Tautkan perangkat");
+        console.log("→ Scan QR code");
+        console.log("");
+        console.log("=================================");
+        console.log("");
+      }
+
+      // =========================
+      // CONNECTING
+      // =========================
 
       if (connection === "connecting") {
         console.log(
           "Menghubungkan ke WhatsApp..."
         );
       }
+
+      // =========================
+      // OPEN
+      // =========================
 
       if (connection === "open") {
         console.log("");
@@ -287,6 +265,10 @@ async function startBot() {
         console.log("=================================");
         console.log("");
       }
+
+      // =========================
+      // CLOSE
+      // =========================
 
       if (connection === "close") {
         const statusCode =
@@ -316,10 +298,10 @@ async function startBot() {
         } else {
           console.log("");
           console.log(
-            "Session logout."
+            "Session WhatsApp sudah logout."
           );
           console.log(
-            "Hapus folder auth lalu pairing ulang."
+            "Hapus folder auth lalu jalankan bot lagi untuk mendapatkan QR baru."
           );
           console.log("");
         }
