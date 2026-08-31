@@ -1,15 +1,19 @@
+require("dotenv").config();
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion
+  DisconnectReason
 } = require("@whiskeysockets/baileys");
 
 const pino = require("pino");
 const fs = require("fs");
-const readline = require("readline");
 
 const DATA_FILE = "./data.json";
+
+// =========================
+// DATA
+// =========================
 
 function loadData() {
   try {
@@ -24,6 +28,7 @@ function loadData() {
     return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   } catch (e) {
     console.log("Gagal membaca data.json:", e);
+
     return {
       totalKas: 26000,
       saldo: {},
@@ -35,8 +40,19 @@ function loadData() {
 let data = loadData();
 
 function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(
+      DATA_FILE,
+      JSON.stringify(data, null, 2)
+    );
+  } catch (e) {
+    console.log("Gagal menyimpan data:", e);
+  }
 }
+
+// =========================
+// FORMAT
+// =========================
 
 function rupiah(n) {
   return "Rp" + Number(n || 0).toLocaleString("id-ID");
@@ -54,18 +70,18 @@ function parseNominal(text) {
 
   let multiplier = 1;
 
-  if (text.endsWith("jt")) {
-    multiplier = 1000000;
-    text = text.slice(0, -2);
-  } else if (text.endsWith("juta")) {
+  if (text.endsWith("juta")) {
     multiplier = 1000000;
     text = text.slice(0, -4);
-  } else if (text.endsWith("k")) {
-    multiplier = 1000;
-    text = text.slice(0, -1);
+  } else if (text.endsWith("jt")) {
+    multiplier = 1000000;
+    text = text.slice(0, -2);
   } else if (text.endsWith("rb")) {
     multiplier = 1000;
     text = text.slice(0, -2);
+  } else if (text.endsWith("k")) {
+    multiplier = 1000;
+    text = text.slice(0, -1);
   }
 
   const number = parseFloat(text);
@@ -74,6 +90,10 @@ function parseNominal(text) {
 
   return Math.round(number * multiplier);
 }
+
+// =========================
+// MESSAGE HELPERS
+// =========================
 
 function getMentionedUsers(msg) {
   const context =
@@ -98,6 +118,10 @@ function getText(msg) {
     ""
   );
 }
+
+// =========================
+// USER
+// =========================
 
 function ensureUser(jid, name = null) {
   if (!data.saldo[jid]) {
@@ -130,6 +154,10 @@ function userList() {
     .join("\n");
 }
 
+// =========================
+// HISTORY
+// =========================
+
 function addHistory(type, users, amount, totalAfter) {
   data.rekap.push({
     waktu: new Date().toISOString(),
@@ -139,122 +167,206 @@ function addHistory(type, users, amount, totalAfter) {
     totalKas: totalAfter
   });
 
-  // Batasi history agar data tidak terlalu besar
   if (data.rekap.length > 500) {
     data.rekap = data.rekap.slice(-500);
   }
 }
 
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+// =========================
+// START BOT
+// =========================
 
-  const { version } = await fetchLatestBaileysVersion();
+async function startBot() {
+  console.log("");
+  console.log("=================================");
+  console.log("       GENTA KAS BOT");
+  console.log("=================================");
+  console.log("");
+
+  const { state, saveCreds } =
+    await useMultiFileAuthState("./auth");
 
   const sock = makeWASocket({
-    version,
     auth: state,
-    printQRInTerminal: false,
     logger: pino({ level: "silent" }),
-    browser: ["GENTA KAS BOT", "Chrome", "1.0.0"]
+    browser: [
+      "GENTA KAS BOT",
+      "Chrome",
+      "1.0.0"
+    ],
+    markOnlineOnConnect: false,
+    syncFullHistory: false
   });
 
   sock.ev.on("creds.update", saveCreds);
 
-  // LOGIN PAIRING
+  // =========================
+  // PAIRING CODE
+  // =========================
+
   if (!sock.authState.creds.registered) {
     const phoneNumber = process.env.WA_NUMBER;
 
     if (!phoneNumber) {
       console.log("");
       console.log("=================================");
-      console.log(" WA_NUMBER belum diisi!");
+      console.log(" WA_NUMBER BELUM DIISI");
       console.log("=================================");
       console.log("");
-      console.log("Contoh:");
-      console.log("WA_NUMBER=6283863295305");
+      console.log("Railway Variables:");
       console.log("");
-      process.exit(1);
+      console.log("WA_NUMBER=628xxxxxxxxxx");
+      console.log("");
+
+      return;
     }
 
-    const cleanNumber = phoneNumber.replace(/\D/g, "");
+    const cleanNumber =
+      phoneNumber.replace(/\D/g, "");
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log(
+        "Menunggu koneksi WhatsApp untuk pairing..."
+      );
 
-      const code = await sock.requestPairingCode(cleanNumber);
+      await new Promise(resolve =>
+        setTimeout(resolve, 5000)
+      );
+
+      const code =
+        await sock.requestPairingCode(cleanNumber);
 
       console.log("");
       console.log("=================================");
       console.log("      WHATSAPP PAIRING CODE");
       console.log("=================================");
       console.log("");
-      console.log(` Nomor : ${cleanNumber}`);
-      console.log(` CODE  : ${code}`);
+      console.log(`Nomor : ${cleanNumber}`);
+      console.log(`CODE  : ${code}`);
       console.log("");
-      console.log("WhatsApp > Perangkat tertaut");
-      console.log("> Tautkan perangkat");
-      console.log("> Tautkan dengan nomor telepon");
+      console.log("Di HP:");
+      console.log("WhatsApp");
+      console.log("→ Perangkat tertaut");
+      console.log("→ Tautkan perangkat");
+      console.log("→ Tautkan dengan nomor telepon");
       console.log("");
       console.log("=================================");
       console.log("");
+
     } catch (err) {
-      console.log("Gagal mendapatkan pairing code:");
-      console.log(err);
+      console.log("");
+      console.log("GAGAL MENDAPATKAN PAIRING CODE");
+      console.error(err);
+      console.log("");
     }
   }
 
-  sock.ev.on("connection.update", async update => {
-    const { connection, lastDisconnect } = update;
+  // =========================
+  // CONNECTION
+  // =========================
 
-    if (connection === "open") {
-      console.log("");
-      console.log("=================================");
-      console.log(" WhatsApp berhasil tersambung!");
-      console.log(" GENTA KAS BOT ONLINE");
-      console.log("=================================");
-      console.log("");
-    }
+  sock.ev.on(
+    "connection.update",
+    async update => {
+      const {
+        connection,
+        lastDisconnect
+      } = update;
 
-    if (connection === "close") {
-      const statusCode =
-        lastDisconnect?.error?.output?.statusCode;
+      if (connection === "connecting") {
+        console.log(
+          "Menghubungkan ke WhatsApp..."
+        );
+      }
 
-      const shouldReconnect =
-        statusCode !== DisconnectReason.loggedOut;
+      if (connection === "open") {
+        console.log("");
+        console.log("=================================");
+        console.log(" WhatsApp berhasil tersambung!");
+        console.log(" GENTA KAS BOT ONLINE");
+        console.log("=================================");
+        console.log("");
+      }
 
-      console.log("Koneksi WhatsApp terputus.");
+      if (connection === "close") {
+        const statusCode =
+          lastDisconnect?.error?.output?.statusCode;
 
-      if (shouldReconnect) {
-        console.log("Mencoba reconnect...");
-        startBot();
-      } else {
-        console.log("Session logout. Hapus folder auth lalu login ulang.");
+        console.log("");
+        console.log(
+          "Koneksi WhatsApp terputus."
+        );
+
+        console.log(
+          "Status:",
+          statusCode
+        );
+
+        if (
+          statusCode !==
+          DisconnectReason.loggedOut
+        ) {
+          console.log(
+            "Mencoba reconnect dalam 5 detik..."
+          );
+
+          setTimeout(() => {
+            startBot();
+          }, 5000);
+        } else {
+          console.log("");
+          console.log(
+            "Session logout."
+          );
+          console.log(
+            "Hapus folder auth lalu pairing ulang."
+          );
+          console.log("");
+        }
       }
     }
-  });
+  );
 
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    try {
-      const msg = messages[0];
+  // =========================
+  // MESSAGE
+  // =========================
 
-      if (!msg || msg.key.fromMe) return;
+  sock.ev.on(
+    "messages.upsert",
+    async ({ messages }) => {
+      try {
+        const msg = messages[0];
 
-      const jid = msg.key.remoteJid;
+        if (!msg || msg.key.fromMe) {
+          return;
+        }
 
-      if (!jid || jid === "status@broadcast") return;
+        const jid =
+          msg.key.remoteJid;
 
-      const text = getText(msg).trim();
+        if (
+          !jid ||
+          jid === "status@broadcast"
+        ) {
+          return;
+        }
 
-      if (!text) return;
+        const text =
+          getText(msg).trim();
 
-      const command = text.split(/\s+/)[0].toLowerCase();
+        if (!text) return;
 
-      // =========================
-      // START
-      // =========================
+        const command =
+          text
+            .split(/\s+/)[0]
+            .toLowerCase();
 
-      if (command === "/start") {
-        const help = `
+        // =========================
+        // START
+        // =========================
+
+        if (command === "/start") {
+          const help = `
 ╭━━━〔 💰 GENTA KAS 〕━━━╮
 ┃
 ┃ /rekap
@@ -272,20 +384,20 @@ async function startBot() {
 ╰━━━━━━━━━━━━━━━━━━━━╯
 `;
 
-        await sock.sendMessage(jid, {
-          text: help
-        });
+          await sock.sendMessage(jid, {
+            text: help
+          });
 
-        return;
-      }
+          return;
+        }
 
-      // =========================
-      // HELP
-      // =========================
+        // =========================
+        // HELP
+        // =========================
 
-      if (command === "/help") {
-        await sock.sendMessage(jid, {
-          text:
+        if (command === "/help") {
+          await sock.sendMessage(jid, {
+            text:
 `💰 *GENTA KAS BOT*
 
 Command:
@@ -315,280 +427,383 @@ Lihat riwayat:
 
 Reset:
  /reset`
-        });
+          });
 
-        return;
-      }
+          return;
+        }
 
-      // =========================
-      // TOTAL
-      // =========================
+        // =========================
+        // TOTAL
+        // =========================
 
-      if (command === "/total" || command === "/totalsaldo") {
-        await sock.sendMessage(jid, {
-          text:
+        if (
+          command === "/total" ||
+          command === "/totalsaldo"
+        ) {
+          await sock.sendMessage(jid, {
+            text:
 `💰 *TOTAL KAS*
 
 ${rupiah(data.totalKas)}
 
 👥 Jumlah orang:
 ${Object.keys(data.saldo).length}`
-        });
-
-        return;
-      }
-
-      // =========================
-      // SALDO
-      // =========================
-
-      if (command === "/saldo") {
-        const mentions = [];
-
-        for (const [userJid, user] of Object.entries(data.saldo)) {
-          mentions.push(userJid);
-        }
-
-        let message = `💳 *SALDO PER ORANG*\n\n${userList()}\n\n💰 Total kas: ${rupiah(data.totalKas)}`;
-
-        await sock.sendMessage(jid, {
-          text: message,
-          mentions
-        });
-
-        return;
-      }
-
-      // =========================
-      // REKAP
-      // =========================
-
-      if (command === "/rekap") {
-        let output = `💰 *REKAP KAS*\n\n`;
-        output += `Saldo kas: *${rupiah(data.totalKas)}*\n\n`;
-
-        if (!data.rekap.length) {
-          output += "Belum ada transaksi.\n";
-        } else {
-          data.rekap.slice(-20).forEach((r, i) => {
-            const tanda = r.type === "tambah" ? "➕" : "➖";
-
-            output += `${tanda} *${r.type.toUpperCase()}*\n`;
-
-            for (const u of r.users) {
-              output += `• ${formatUser(u)} ${r.type === "tambah" ? "+" : "-"}${rupiah(r.amount)}\n`;
-            }
-
-            output += `Total kas: ${rupiah(r.totalKas)}\n\n`;
-          });
-        }
-
-        output += `━━━━━━━━━━━━━━\n`;
-        output += `*SALDO ORANG*\n\n`;
-        output += userList();
-
-        const mentions = Object.keys(data.saldo);
-
-        await sock.sendMessage(jid, {
-          text: output,
-          mentions
-        });
-
-        return;
-      }
-
-      // =========================
-      // SET KAS
-      // =========================
-
-      if (command === "/setkas") {
-        const args = text.split(/\s+/);
-
-        if (!args[1]) {
-          await sock.sendMessage(jid, {
-            text: "Contoh:\n/setkas 26k"
           });
 
           return;
         }
 
-        const nominal = parseNominal(args[1]);
+        // =========================
+        // SALDO
+        // =========================
 
-        if (nominal === null) {
+        if (command === "/saldo") {
+          const mentions =
+            Object.keys(data.saldo);
+
+          const message =
+`💳 *SALDO PER ORANG*
+
+${userList()}
+
+💰 Total kas:
+${rupiah(data.totalKas)}`;
+
           await sock.sendMessage(jid, {
-            text: "Nominal tidak valid."
+            text: message,
+            mentions
           });
 
           return;
         }
 
-        data.totalKas = nominal;
+        // =========================
+        // REKAP
+        // =========================
 
-        saveData();
+        if (command === "/rekap") {
+          let output =
+            `💰 *REKAP KAS*\n\n`;
 
-        await sock.sendMessage(jid, {
-          text: `✅ Saldo kas diubah menjadi *${rupiah(nominal)}*`
-        });
+          output +=
+            `Saldo kas: *${rupiah(
+              data.totalKas
+            )}*\n\n`;
 
-        return;
-      }
+          if (!data.rekap.length) {
+            output +=
+              "Belum ada transaksi.\n";
+          } else {
+            data.rekap
+              .slice(-20)
+              .forEach(r => {
+                const tanda =
+                  r.type === "tambah"
+                    ? "➕"
+                    : "➖";
 
-      // =========================
-      // TAMBAH
-      // =========================
+                output +=
+                  `${tanda} *${r.type.toUpperCase()}*\n`;
 
-      if (command === "/tambah") {
-        const mentions = getMentionedUsers(msg);
+                for (
+                  const u of r.users
+                ) {
+                  output +=
+                    `• ${formatUser(u)} ` +
+                    `${
+                      r.type === "tambah"
+                        ? "+"
+                        : "-"
+                    }${rupiah(r.amount)}\n`;
+                }
 
-        if (!mentions.length) {
+                output +=
+                  `Total kas: ${rupiah(
+                    r.totalKas
+                  )}\n\n`;
+              });
+          }
+
+          output +=
+            `━━━━━━━━━━━━━━\n`;
+
+          output +=
+            `*SALDO ORANG*\n\n`;
+
+          output += userList();
+
+          const mentions =
+            Object.keys(data.saldo);
+
+          await sock.sendMessage(jid, {
+            text: output,
+            mentions
+          });
+
+          return;
+        }
+
+        // =========================
+        // SET KAS
+        // =========================
+
+        if (command === "/setkas") {
+          const args =
+            text.split(/\s+/);
+
+          if (!args[1]) {
+            await sock.sendMessage(jid, {
+              text:
+                "Contoh:\n/setkas 26k"
+            });
+
+            return;
+          }
+
+          const nominal =
+            parseNominal(args[1]);
+
+          if (
+            nominal === null ||
+            nominal < 0
+          ) {
+            await sock.sendMessage(jid, {
+              text:
+                "Nominal tidak valid."
+            });
+
+            return;
+          }
+
+          data.totalKas =
+            nominal;
+
+          saveData();
+
           await sock.sendMessage(jid, {
             text:
+              `✅ Saldo kas diubah menjadi *${rupiah(
+                nominal
+              )}*`
+          });
+
+          return;
+        }
+
+        // =========================
+        // TAMBAH
+        // =========================
+
+        if (command === "/tambah") {
+          const mentions =
+            getMentionedUsers(msg);
+
+          if (!mentions.length) {
+            await sock.sendMessage(jid, {
+              text:
 `❌ Tidak ada orang yang ditandai.
 
 Contoh:
  /tambah @bayu @asen +4k`
-          });
+            });
 
-          return;
-        }
+            return;
+          }
 
-        const args = text.split(/\s+/);
+          const args =
+            text.split(/\s+/);
 
-        let nominalText = args.find(x => {
-          return /[0-9]+(?:[.,][0-9]+)?(?:k|rb|jt|juta)?/i.test(x);
-        });
+          const nominalText =
+            args.find(x =>
+              /[0-9]+(?:[.,][0-9]+)?(?:k|rb|jt|juta)?/i
+                .test(x)
+            );
 
-        if (!nominalText) {
-          await sock.sendMessage(jid, {
-            text: "Nominal tidak ditemukan.\n\nContoh: /tambah @bayu @asen +4k"
-          });
+          if (!nominalText) {
+            await sock.sendMessage(jid, {
+              text:
+`Nominal tidak ditemukan.
 
-          return;
-        }
+Contoh:
+ /tambah @bayu @asen +4k`
+            });
 
-        const nominal = parseNominal(nominalText.replace("+", ""));
+            return;
+          }
 
-        if (!nominal || nominal <= 0) {
-          await sock.sendMessage(jid, {
-            text: "Nominal tidak valid."
-          });
+          const nominal =
+            parseNominal(
+              nominalText.replace("+", "")
+            );
 
-          return;
-        }
+          if (
+            !nominal ||
+            nominal <= 0
+          ) {
+            await sock.sendMessage(jid, {
+              text:
+                "Nominal tidak valid."
+            });
 
-        const perPerson = Math.floor(nominal / mentions.length);
+            return;
+          }
 
-        const sisa = nominal - perPerson * mentions.length;
+          const perPerson =
+            Math.floor(
+              nominal /
+              mentions.length
+            );
 
-        for (const userJid of mentions) {
-          ensureUser(userJid);
+          const sisa =
+            nominal -
+            perPerson *
+              mentions.length;
 
-          data.saldo[userJid].saldo += perPerson;
-        }
+          for (
+            const userJid of mentions
+          ) {
+            ensureUser(userJid);
 
-        data.totalKas += nominal;
+            data.saldo[userJid]
+              .saldo += perPerson;
+          }
 
-        addHistory(
-          "tambah",
-          mentions,
-          perPerson,
-          data.totalKas
-        );
+          data.totalKas +=
+            nominal;
 
-        saveData();
+          addHistory(
+            "tambah",
+            mentions,
+            perPerson,
+            data.totalKas
+          );
 
-        let output =
+          saveData();
+
+          let output =
 `✅ *KAS BERTAMBAH*
 
 💰 Masuk: ${rupiah(nominal)}
 👥 Orang: ${mentions.length}
-💵 Per orang: ${rupiah(perPerson)}`;
+💵 Per orang: ${rupiah(perPerson)}
 
-        if (sisa > 0) {
-          output += `\n⚠️ Sisa pembagian: ${rupiah(sisa)}`;
-        }
+`;
 
-        output += `\n\n`;
+          for (
+            const userJid of mentions
+          ) {
+            output +=
+              `${formatUser(
+                userJid
+              )} +${rupiah(
+                perPerson
+              )}\n`;
+          }
 
-        for (const userJid of mentions) {
-          output += `${formatUser(userJid)} +${rupiah(perPerson)}\n`;
-        }
+          if (sisa > 0) {
+            output +=
+              `\n⚠️ Sisa pembagian: ${rupiah(
+                sisa
+              )}`;
+          }
 
-        output += `\n💰 Total kas: *${rupiah(data.totalKas)}*`;
+          output +=
+            `\n💰 Total kas: *${rupiah(
+              data.totalKas
+            )}*`;
 
-        await sock.sendMessage(jid, {
-          text: output,
-          mentions
-        });
-
-        return;
-      }
-
-      // =========================
-      // MINUS
-      // =========================
-
-      if (command === "/minus") {
-        const mentions = getMentionedUsers(msg);
-
-        if (!mentions.length) {
           await sock.sendMessage(jid, {
-            text:
+            text: output,
+            mentions
+          });
+
+          return;
+        }
+
+        // =========================
+        // MINUS
+        // =========================
+
+        if (command === "/minus") {
+          const mentions =
+            getMentionedUsers(msg);
+
+          if (!mentions.length) {
+            await sock.sendMessage(jid, {
+              text:
 `❌ Tidak ada orang yang ditandai.
 
 Contoh:
  /minus @asen @galih -2k`
-          });
+            });
 
-          return;
-        }
+            return;
+          }
 
-        const args = text.split(/\s+/);
+          const args =
+            text.split(/\s+/);
 
-        let nominalText = args.find(x => {
-          return /-?[0-9]+(?:[.,][0-9]+)?(?:k|rb|jt|juta)?/i.test(x);
-        });
+          const nominalText =
+            args.find(x =>
+              /-?[0-9]+(?:[.,][0-9]+)?(?:k|rb|jt|juta)?/i
+                .test(x)
+            );
 
-        if (!nominalText) {
-          await sock.sendMessage(jid, {
-            text: "Nominal tidak ditemukan.\n\nContoh: /minus @asen @galih -2k"
-          });
+          if (!nominalText) {
+            await sock.sendMessage(jid, {
+              text:
+`Nominal tidak ditemukan.
 
-          return;
-        }
+Contoh:
+ /minus @asen @galih -2k`
+            });
 
-        const nominal = parseNominal(
-          nominalText.replace("-", "")
-        );
+            return;
+          }
 
-        if (!nominal || nominal <= 0) {
-          await sock.sendMessage(jid, {
-            text: "Nominal tidak valid."
-          });
+          const nominal =
+            parseNominal(
+              nominalText.replace("-", "")
+            );
 
-          return;
-        }
+          if (
+            !nominal ||
+            nominal <= 0
+          ) {
+            await sock.sendMessage(jid, {
+              text:
+                "Nominal tidak valid."
+            });
 
-        const totalPengurangan = nominal * mentions.length;
+            return;
+          }
 
-        for (const userJid of mentions) {
-          ensureUser(userJid);
+          const totalPengurangan =
+            nominal *
+            mentions.length;
 
-          data.saldo[userJid].saldo -= nominal;
-        }
+          for (
+            const userJid of mentions
+          ) {
+            ensureUser(userJid);
 
-        data.totalKas -= totalPengurangan;
+            data.saldo[userJid]
+              .saldo -= nominal;
+          }
 
-        addHistory(
-          "minus",
-          mentions,
-          nominal,
-          data.totalKas
-        );
+          data.totalKas -=
+            totalPengurangan;
 
-        saveData();
+          addHistory(
+            "minus",
+            mentions,
+            nominal,
+            data.totalKas
+          );
 
-        let output =
+          saveData();
+
+          let output =
 `💸 *KAS DIKURANGI*
 
 👥 Orang: ${mentions.length}
@@ -597,87 +812,139 @@ Contoh:
 
 `;
 
-        for (const userJid of mentions) {
-          output += `${formatUser(userJid)} -${rupiah(nominal)}\n`;
-        }
+          for (
+            const userJid of mentions
+          ) {
+            output +=
+              `${formatUser(
+                userJid
+              )} -${rupiah(
+                nominal
+              )}\n`;
+          }
 
-        output += `\n💰 Total kas: *${rupiah(data.totalKas)}*`;
+          output +=
+            `\n💰 Total kas: *${rupiah(
+              data.totalKas
+            )}*`;
 
-        await sock.sendMessage(jid, {
-          text: output,
-          mentions
-        });
-
-        return;
-      }
-
-      // =========================
-      // RIWAYAT
-      // =========================
-
-      if (command === "/riwayat") {
-        if (!data.rekap.length) {
           await sock.sendMessage(jid, {
-            text: "📭 Belum ada riwayat transaksi."
+            text: output,
+            mentions
           });
 
           return;
         }
 
-        let output = "📜 *RIWAYAT TRANSAKSI*\n\n";
+        // =========================
+        // RIWAYAT
+        // =========================
 
-        data.rekap.slice(-30).forEach((r, i) => {
-          const tanggal = new Date(r.waktu).toLocaleString("id-ID");
+        if (command === "/riwayat") {
+          if (!data.rekap.length) {
+            await sock.sendMessage(jid, {
+              text:
+                "📭 Belum ada riwayat transaksi."
+            });
 
-          output += `${i + 1}. ${r.type === "tambah" ? "➕" : "➖"} ${r.type.toUpperCase()}\n`;
-          output += `🕐 ${tanggal}\n`;
-
-          for (const userJid of r.users) {
-            output += `• ${formatUser(userJid)} ${r.type === "tambah" ? "+" : "-"}${rupiah(r.amount)}\n`;
+            return;
           }
 
-          output += `💰 Total: ${rupiah(r.totalKas)}\n\n`;
-        });
+          let output =
+            "📜 *RIWAYAT TRANSAKSI*\n\n";
 
-        await sock.sendMessage(jid, {
-          text: output,
-          mentions: Object.keys(data.saldo)
-        });
+          data.rekap
+            .slice(-30)
+            .forEach((r, i) => {
+              const tanggal =
+                new Date(
+                  r.waktu
+                ).toLocaleString(
+                  "id-ID"
+                );
 
-        return;
-      }
+              output +=
+                `${i + 1}. ${
+                  r.type === "tambah"
+                    ? "➕"
+                    : "➖"
+                } ${r.type.toUpperCase()}\n`;
 
-      // =========================
-      // RESET
-      // =========================
+              output +=
+                `🕐 ${tanggal}\n`;
 
-      if (command === "/reset") {
-        data = {
-          totalKas: 0,
-          saldo: {},
-          rekap: []
-        };
+              for (
+                const userJid of r.users
+              ) {
+                output +=
+                  `• ${formatUser(
+                    userJid
+                  )} ${
+                    r.type === "tambah"
+                      ? "+"
+                      : "-"
+                  }${rupiah(
+                    r.amount
+                  )}\n`;
+              }
 
-        saveData();
+              output +=
+                `💰 Total: ${rupiah(
+                  r.totalKas
+                )}\n\n`;
+            });
 
-        await sock.sendMessage(jid, {
-          text:
+          await sock.sendMessage(jid, {
+            text: output,
+            mentions:
+              Object.keys(data.saldo)
+          });
+
+          return;
+        }
+
+        // =========================
+        // RESET
+        // =========================
+
+        if (command === "/reset") {
+          data = {
+            totalKas: 0,
+            saldo: {},
+            rekap: []
+          };
+
+          saveData();
+
+          await sock.sendMessage(jid, {
+            text:
 `♻️ *DATA DI-RESET*
 
 Total kas: Rp0
 Saldo orang: kosong
 Riwayat: kosong`
-        });
+          });
 
-        return;
+          return;
+        }
+
+      } catch (err) {
+        console.log(
+          "Error message:",
+          err
+        );
       }
-
-    } catch (err) {
-      console.log("Error message:", err);
     }
-  });
+  );
 }
 
+// =========================
+// RUN
+// =========================
+
 startBot().catch(err => {
-  console.error("Fatal error:", err);
+  console.error(
+    "Fatal error:",
+    err
+  );
 });
