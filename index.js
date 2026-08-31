@@ -171,7 +171,7 @@ async function startBot() {
       console.log("=================================");
       console.log("");
       console.log("Contoh:");
-      console.log("WA_NUMBER=628123456789");
+      console.log("WA_NUMBER=6283863295305");
       console.log("");
       process.exit(1);
     }
